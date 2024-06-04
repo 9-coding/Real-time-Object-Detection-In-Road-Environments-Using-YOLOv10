@@ -1,8 +1,11 @@
 import os
 import shutil
 import json
+import time
+
 import numpy as np
 import chardet
+
 
 folder_list = ['1.Frontback_N01', '1.Frontback_N02', '1.Frontback_N03',
                '2.Highway_N01',
@@ -16,7 +19,34 @@ max_size = 10000 # 각 label 별 최대 크기
 
 raw_path = 'raw_dataset' # 원본 데이터셋 경로
 image_path = raw_path + '/Validation/Images/1.TOA' # 원본 파일 내 이미지 파일 경로
-annot_path = raw_path + '/Validation/Annotations/1.TOA' # 원본 파일 내 json 파일 경로
+annotation_path = raw_path + '/Validation/Annotations/1.TOA' # 원본 파일 내 json 파일 경로
+
+# 데이터셋 경로를 쉽게 변경.
+# 또한 옮기는 과정에서 중복 제거
+def export_files(folder_list):
+    print("\nExport Dataset:")
+    print(f'raw_dataset -> temp_dataset')
+    for folder in folder_list:
+        print(folder+" ... " )
+        img_path = os.path.join(image_path, folder)
+        annot_path = os.path.join(annotation_path, folder)
+        img_list = os.listdir(img_path)
+        annot_list = os.listdir(annot_path)
+        count = 0
+        for file in img_list:
+            percent = round(count / len(img_list) * 100, 2)
+            print(f"\r {percent}%: {file}", end="")
+            count += 1
+            try:
+                shutil.copy(os.path.join(img_path, file), "temp_dataset/temp_images")
+            except Exception as e:
+                print(e)
+        for file in annot_list:
+            try:
+                shutil.copy(os.path.join(annot_path, file), "temp_dataset/temp_annotations")
+            except Exception as e:
+                print(e)
+        print()
 
 
 def get_label_num(labels):
@@ -46,8 +76,8 @@ def num_labels(file, file_path, labels, file_names):
             # 고유한 category_ids 추출
             unique_category_ids = np.unique(category_ids)
             for id in unique_category_ids:
-                labels[id - 1].append(file_path)
-                file_names[id - 1].append(file_path[41:-10])
+                labels[id - 1].append(file)
+                file_names[id - 1].append(file)
                 #categories[id - 1].append(file)
 
     except UnicodeDecodeError as e:
@@ -58,92 +88,85 @@ def num_labels(file, file_path, labels, file_names):
     return labels, file_names
 
 # 원본 데이터셋의 정보 출력 및 저장
-def label_info(folder_list, annot_path):
+def label_info(annot_path):
     print("\nReading files ...")
+
     n_files = 0
     labels = [[] for _ in range(10)]
     file_names = [[] for _ in range(10)]
+    file_list = os.listdir(annot_path)
+    count = 0
 
-    for folder in folder_list:
-        print(folder)
-        file_list = os.listdir(os.path.join(annot_path, folder))
-
-        for file in file_list:
-            n_files += 1
-            file_path = os.path.join(annot_path, folder, file)
-            labels, file_names = num_labels(file, file_path, labels, file_names)
+    for file in file_list:
+        percent = round(count / len(file_list)* 100, 2)
+        print(f"\r {percent}%: {file}", end="")
+        n_files += 1
+        file_path = os.path.join(annot_path, file)
+        labels, file_names = num_labels(file, file_path, labels, file_names)
+        count += 1
 
     # 정보 출력
-    print(f"\nnumber of files in dataset: {n_files}")
+    print(f"\n\nnumber of files in dataset: {n_files}")
     n_labels = get_label_num(labels)
     for label, num in zip(class_list, n_labels):
         print(label + ': '+str(num))
     return labels, file_names
 
 # image와 annotation의 이름이 매칭이 안 되는 파일 제거.
-def drop_files(folder_list, annot_path, image_path):
+def drop_files(annot_path, image_path):
     print("\nChecking files ...")
-    for folder in folder_list:
-        file_list = os.listdir(os.path.join(annot_path, folder))
-        for annot_file in file_list:
-            file_path = annot_path+'/'+folder+'/'+annot_file
-            img_file = annot_file[:-10] + '.png'
-            img_path = image_path+'/'+folder+'/'+img_file
-            if not os.path.exists(img_path):
-                print("Does not exists: "+img_path)
-            #print(file_path)
-
-
+    n = 0
+    file_list = os.listdir(annot_path)
+    for annot_file in file_list:
+        file_path = annot_path + '/' + annot_file
+        img_file = annot_file[:-10] + '.png'
+        img_path = image_path + '/' + img_file
+        if not os.path.exists(img_path):
+            n += 1
+    print(f"Drop {n} mismatched files")
 
 # 임시 데이터셋, 최종 데이터셋 폴더 생성
 def make_dirs():
     temp = "temp_dataset"
     dataset = "dataset"
     if not os.path.exists("temp_dataset"):
+        os.makedirs(os.path.join(temp, "temp_images"))
+        os.makedirs(os.path.join(temp, "temp_annotations"))
         os.makedirs(os.path.join(temp, "images"))
         os.makedirs(os.path.join(temp, "annotations"))
 
     if not os.path.exists(dataset):
         os.mkdir(dataset)
 
-
-def move_files(src_img, src_annot, dst, file):
-    move_img = dst + '/images'
-    move_annot = dst + '/annotations'
-    img = file + '.png'
-    annot = file + '_BBOX.json'
-
-    try:
-        # image 이동
-        shutil.copy(src_img, os.path.join(move_img, img))
-        # annotation 이동
-        shutil.copy(src_annot, os.path.join(move_annot, annot))
-    except Exception as e:
-        print(e)
-        return
-
-def balance_dataset(src, dst, labels, file_names):
-    print("\nExport Dataset:")
-    print(f'{src} -> {dst}')
-    # n_labels = [10520, 43433, 9144, 8076, 30534, 23962, 8189, 5000, 4284, 18752]
+def balance_dataset(labels, file_names):
+    print("\nSet balance each label:")
     n_labels = get_label_num(labels)
     image = [[] for _ in range(10)]
-    p = 0
+    print(labels)
     for i in range(1):
         print(class_list[i])
         for j in range(n_labels[i]):
             if j < max_size:
-                image[i].append(image_path + '/' + file_names[i][j] + '.png')
-                move_files(image[i][j], labels[i][j], dst, file_names[i][j].split('/')[1])
+                print("temp_dataset/temp_images/"+file_names[i][j][:-10]+'.png')
+                '''image[i].append(file_names[i][j][:-10] + '.png')
+                try:
+                    shutil.move("temp_dataset/temp_images/"+image[i][j], "temp_dataset/Images/"+image[i][j])
+                except Exception as e:
+                    print(e)
+                try:
+                    shutil.move("temp_dataset/temp_annotations/"+file_names[i][j].split('/')[1], "temp_dataset/Annotations/"+file_names[i][j].split('/')[1])
+                except Exception as e:
+                    print(e)
+                #move_files(image[i][j], labels[i][j], "temp_dataset", file_names[i][j].split('/')[1])'''
             else:
                 break
 
-
-labels, file_names=label_info(folder_list, annot_path) # 라벨 정보 추출
-drop_files(folder_list, annot_path, image_path)
 make_dirs() # 결과 폴더 만들기
-balance_dataset(raw_path, "temp_dataset", labels, file_names) # 라벨 균형 맞추기
+#export_files(folder_list) # 원본 데이터셋에서 파일만 추출
+#drop_files("temp_dataset/annotations", "temp_dataset/images") # 이미지와 라벨 이름이 일치하지 않는 파일 제거
+labels, file_names= label_info("temp_dataset/temp_annotations") # 라벨 정보 추출
 
-print("\n----- After exporting dataset -----")
-folder_list = ['annotations'] # image는 필요없음
-labels=label_info(folder_list, "temp_dataset")
+balance_dataset(labels, file_names) # 라벨 균형 맞추기
+
+print("\n----- After balancing dataset -----")
+labels, file_names=label_info("temp_dataset/Annotations")
