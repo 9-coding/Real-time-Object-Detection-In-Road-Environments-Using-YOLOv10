@@ -1,10 +1,9 @@
 import os
 import shutil
 import json
-import time
-
-import numpy as np
 import chardet
+import splitfolders
+import numpy as np
 
 
 folder_list = ['1.Frontback_N01', '1.Frontback_N02', '1.Frontback_N03',
@@ -41,6 +40,7 @@ def make_dirs():
     if not os.path.exists("temp_dataset"):
         os.makedirs(os.path.join(temp, "temp_images"))
         os.makedirs(os.path.join(temp, "temp_annotations"))
+        os.makedirs(os.path.join(temp, "txt_Annotations"))
         os.makedirs(os.path.join(temp, "Images"))
         os.makedirs(os.path.join(temp, "Annotations"))
 
@@ -228,12 +228,61 @@ def balance_dataset():
             print(class_list[i]+": 이미 10000개 존재")
             continue
 
+# xywh형식에서 주어진 데이터셋은 좌상단 xy, YOLO는 중심점 xy 사용.
+def find_center(bbox):
+    return (bbox[0]*2+bbox[2]) / 2, (bbox[1] * 2 + bbox[3]) / 2
+
+def normalize(x, y, w, h):
+    x = x/1280
+    y = y/720
+    w = w/1280
+    h = h/720
+    return x, y, w, h
+
+def json_to_txt(path, dst_folder):
+
+    if not os.path.exists(path):
+        print(f"Error: Annotation folder '{path}' does not exist.")
+        return
+
+    file_list = os.listdir(path)
+
+    for file in file_list:
+        file_path = path + '/' + file
+        file_name = file[:-10]
+        print(file)
+
+        with open(file_path) as f:
+            data = json.load(f)
+            f = open(f"{dst_folder}/{file_name}.txt", 'w')
+            for l in range(len(data['annotations'])):
+                category_id = data['annotations'][l]['category_id']
+                bbox = data['annotations'][l]['bbox']
+                x, y = find_center(bbox)
+                point_list = normalize(x, y, bbox[2], bbox[3])
+                point_list_str = ' '.join(map(str, point_list))
+                f.write(str(category_id) + ' ' + point_list_str + "\n")
+            f.close()
+
+
 make_dirs() # 결과 폴더 만들기
 #export_files(folder_list) # 원본 데이터셋에서 파일만 추출
 #drop_files("temp_dataset/temp_annotations", "temp_dataset/temp_images") # 이미지와 라벨 이름이 일치하지 않는 파일 제거
 #labels, file_names= label_info("temp_dataset/temp_annotations") # 라벨 정보 추출
 
-balance_dataset() # 라벨 균형 맞추기
+#balance_dataset() # 라벨 균형 맞추기
+
 print("\n----- After balancing dataset -----")
 labels, file_names=label_info("temp_dataset/Annotations")
 
+#os.makedirs(os.path.join("temp_dataset", "txt_Annotations"))
+json_to_txt("temp_dataset/Annotations", "temp_dataset/txt_Annotations")
+
+
+shutil.rmtree("temp_dataset/temp_annotations")
+shutil.rmtree("temp_dataset/temp_images")
+shutil.rmtree("temp_dataset/Annotations")
+os.rename("temp_dataset/txt_Annotations", "temp_dataset/Annotations")
+splitfolders.ratio("temp_dataset", output="dataset", ratio=(.7, .2, .1))
+
+print(os.getcwd())
